@@ -1,0 +1,1 @@
+# SpendTalk FastAPI Backend Application
