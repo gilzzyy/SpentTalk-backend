@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user_id
 from app.controllers.auth_controller import AuthController
-from app.schemas.user import UserCreate, UserLogin, UserUpdate, UserOut, Token
+from app.schemas.user import UserCreate, UserLogin, UserOut, Token
 from app.core.exceptions import AuthError, ResourceNotFoundError
+from typing import Optional
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -23,7 +24,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
         token = controller.authenticate_user(payload)
         return {"access_token": token, "token_type": "bearer"}
     except AuthError as e:
-        raise HTTPException(status_code=status.HTTP_418_IM_A_TEAPOT if "api" in str(e).lower() else status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
 @router.get("/me", response_model=UserOut)
 def get_profile(current_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
@@ -35,13 +36,27 @@ def get_profile(current_user_id: int = Depends(get_current_user_id), db: Session
 
 @router.put("/me", response_model=UserOut)
 def update_profile(
-    payload: UserUpdate,
+    name: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    university: Optional[str] = Form(None),
+    old_password: Optional[str] = Form(None),
+    new_password: Optional[str] = Form(None),
+    profile_photo: Optional[UploadFile] = File(None),
     current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     controller = AuthController(db)
     try:
-        return controller.update_user_profile(current_user_id, payload)
+        return controller.update_user_profile(
+            user_id=current_user_id,
+            name=name,
+            email=email,
+            university=university,
+            old_password=old_password,
+            new_password=new_password,
+            profile_file=profile_photo
+        )
+
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ResourceNotFoundError as e:

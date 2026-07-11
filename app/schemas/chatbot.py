@@ -9,12 +9,13 @@ class ChatMessage(BaseModel):
 class ParsedItem(BaseModel):
     item_name: str
     amount: Decimal
-    category: str
+    category_name: str
     type: TransactionTypeEnum
 
 class ParseResult(BaseModel):
     items: List[ParsedItem]
     raw_message: str
+    chat_message_id: int
 
 class ChatResponse(BaseModel):
     reply: str
@@ -22,6 +23,10 @@ class ChatResponse(BaseModel):
     needs_confirmation: bool = False
 
 class ConfirmTransactionRequest(BaseModel):
-    raw_message: str
-    items: List[ParsedItem]
+    chat_message_id: int
     confirmed: bool
+    override_item_name: Optional[str] = None
+    override_amount: Optional[Decimal] = None
+    override_category_id: Optional[int] = None
+    override_type: Optional[TransactionTypeEnum] = None
+

@@ -1,8 +1,10 @@
 from datetime import datetime
+from decimal import Decimal
 from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
 
 class UserBase(BaseModel):
-    nama: str = Field(..., min_length=2, max_length=100)
+    name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr
 
 class UserCreate(UserBase):
@@ -14,21 +16,29 @@ class UserLogin(BaseModel):
     password: str
 
 class UserUpdate(BaseModel):
-    nama: str = Field(None, min_length=2, max_length=100)
-    email: EmailStr = Field(None)
-    old_password: str = Field(None, min_length=6)
-    new_password: str = Field(None, min_length=6)
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    email: Optional[EmailStr] = Field(None)
+    university: Optional[str] = Field(None, max_length=255)
+    old_password: Optional[str] = Field(None, min_length=6)
+    new_password: Optional[str] = Field(None, min_length=6)
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 class TokenData(BaseModel):
-    user_id: str = None
+    user_id: Optional[str] = None
 
 class UserOut(UserBase):
     id: int
+    profile_photo_url: Optional[str] = None
+    initial_balance: Decimal
+    current_balance: Decimal
+    onboarding_completed: bool
+    is_active: bool
+    university: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+

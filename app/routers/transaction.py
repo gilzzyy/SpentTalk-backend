@@ -6,31 +6,58 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user_id
 from app.repositories.transaction_repository import TransactionRepository
-from app.repositories.profile_repository import ProfileRepository
+from app.repositories.budget_repository import BudgetRepository
+from app.repositories.category_repository import CategoryRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.transaction import TransactionOut, DashboardSummary
+from app.repositories.notification_repository import NotificationRepository
+from app.models.notification import Notification
+from app.schemas.transaction import TransactionOut, DashboardSummary, HistorySummary
 from app.services.finance_manager import FinanceManager
 from app.services.excel_exporter import ExcelExporter
 from app.services.nlp_parser import NLPParser
+from decimal import Decimal
+
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
-@router.get("", response_model=List[TransactionOut])
+@router.get("", response_model=HistorySummary)
 def get_transactions(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
-    category: Optional[str] = Query(None),
+    category_name: Optional[str] = Query(None),
+    period: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    search: Optional[str] = Query(None),
     current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     repo = TransactionRepository(db)
-    tx_list = repo.get_by_user(current_user_id, start_date=start_date, end_date=end_date, category=category)
+    tx_list = repo.get_by_user(
+        current_user_id,
+        start_date=start_date,
+        end_date=end_date,
+        category_name=category_name,
+        period=period,
+        search=search
+    )
+
+
     
-    # Map polymorphic details if needed
+    total_pemasukan = Decimal("0.00")
+    total_pengeluaran = Decimal("0.00")
+    
     for tx in tx_list:
         tx.formatted_detail = tx.format_detail()
-        
-    return tx_list
+        if tx.type == "pemasukan":
+            total_pemasukan += tx.amount
+        elif tx.type == "pengeluaran":
+            total_pengeluaran += tx.amount
+
+    return HistorySummary(
+        total_transaksi=len(tx_list),
+        total_pemasukan=total_pemasukan,
+        total_pengeluaran=total_pengeluaran,
+        transactions=tx_list
+    )
 
 @router.get("/dashboard", response_model=DashboardSummary)
 def get_dashboard_summary(
@@ -38,21 +65,28 @@ def get_dashboard_summary(
     db: Session = Depends(get_db)
 ):
     tx_repo = TransactionRepository(db)
-    profile_repo = ProfileRepository(db)
+    budget_repo = BudgetRepository(db)
+    cat_repo = CategoryRepository(db)
+    user_repo = UserRepository(db)
     finance_mgr = FinanceManager()
     nlp_parser = NLPParser()
     
-    # Load profile and transactions
-    profile = profile_repo.get_by_user_id(current_user_id)
-    if not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Financial profile not found")
+    # Load profile details
+    user = user_repo.get_by_id(current_user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         
     all_tx = tx_repo.get_by_user(current_user_id)
     
     # Compute dashboard metrics
-    saldo_terkini = finance_mgr.calculate_current_balance(profile.saldo_awal, all_tx)
+    saldo_terkini = finance_mgr.calculate_current_balance(user.initial_balance, all_tx)
     monthly_sums = finance_mgr.calculate_monthly_summary(all_tx)
-    budget_progress = finance_mgr.track_budget_progress(profile, all_tx)
+    
+    # Load budgets and active categories
+    period = date.today().strftime("%Y-%m")
+    budgets = budget_repo.get_user_budgets(current_user_id, period)
+    categories = cat_repo.get_user_categories(current_user_id)
+    budget_progress = finance_mgr.track_budget_progress(budgets, categories, all_tx)
     
     # Map last 5 transactions
     recent_transactions = all_tx[:5]
@@ -64,12 +98,22 @@ def get_dashboard_summary(
         "saldo_terkini": float(saldo_terkini),
         "total_pemasukan_bulan_ini": float(monthly_sums["income"]),
         "total_pengeluaran_bulan_ini": float(monthly_sums["expense"]),
-        "budget_progress": {
-            k: {"spent": float(v["spent"]), "limit": float(v["limit"]), "percentage": float(v["percentage"])}
-            for k, v in budget_progress.items()
-        }
+        "budget_progress": [
+            {
+                "name": p["name"],
+                "spent": float(p["spent"]),
+                "limit": float(p["limit"]),
+                "percentage": float(p["percentage"])
+            }
+            for p in budget_progress
+        ]
     }
     ai_insight = nlp_parser.generate_financial_insight(summary_data)
+    
+    # Update current_balance on User model
+    if user.current_balance != saldo_terkini:
+        user.current_balance = saldo_terkini
+        user_repo.update(user)
     
     return DashboardSummary(
         saldo_terkini=saldo_terkini,
@@ -82,34 +126,55 @@ def get_dashboard_summary(
 
 @router.get("/export")
 def export_excel(
+    period: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
     current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     tx_repo = TransactionRepository(db)
-    profile_repo = ProfileRepository(db)
+    budget_repo = BudgetRepository(db)
+    cat_repo = CategoryRepository(db)
     user_repo = UserRepository(db)
     finance_mgr = FinanceManager()
     exporter = ExcelExporter()
     
     user = user_repo.get_by_id(current_user_id)
-    profile = profile_repo.get_by_user_id(current_user_id)
-    
-    if not user or not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         
-    all_tx = tx_repo.get_by_user(current_user_id)
-    budget_progress = finance_mgr.track_budget_progress(profile, all_tx)
+    if period:
+        all_tx = tx_repo.get_by_user(current_user_id, period=period)
+        target_period = period
+    else:
+        all_tx = tx_repo.get_by_user(current_user_id)
+        target_period = date.today().strftime("%Y-%m")
+        
+    budgets = budget_repo.get_user_budgets(current_user_id, target_period)
+    categories = cat_repo.get_user_categories(current_user_id)
+    budget_progress = finance_mgr.track_budget_progress(budgets, categories, all_tx)
     
-    # Generate Excel in-memory stream
-    excel_stream = exporter.export_transactions(user.nama, all_tx, budget_progress)
+    # Generate Excel stream
+    excel_stream = exporter.export_transactions(user.name, all_tx, budget_progress)
     
-    filename = f"SpendTalk_{user.nama}_{date.today().strftime('%m%Y')}.xlsx"
+    # Format filename based on selected period
+    period_suffix = target_period.replace("-", "")
+    filename = f"SpendTalk_{user.name}_{period_suffix}.xlsx"
+    
+    # Create notification for Excel export
+    notif_repo = NotificationRepository(db)
+    notif_repo.create(Notification(
+        user_id=current_user_id,
+        title="Ekspor Laporan",
+        message=f"Laporan keuangan periode {target_period} berhasil diekspor ke Excel!",
+        type="export"
+    ))
     
     return StreamingResponse(
         excel_stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
+
     )
+
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_transaction(
@@ -118,7 +183,19 @@ def delete_transaction(
     db: Session = Depends(get_db)
 ):
     repo = TransactionRepository(db)
+    user_repo = UserRepository(db)
+    finance_mgr = FinanceManager()
+    
     tx = repo.get_by_id(id)
     if not tx or tx.user_id != current_user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+        
     repo.delete(id)
+    
+    # Sync User current balance
+    user = user_repo.get_by_id(current_user_id)
+    if user:
+        all_tx = repo.get_by_user(current_user_id)
+        current_balance = finance_mgr.calculate_current_balance(user.initial_balance, all_tx)
+        user.current_balance = current_balance
+        user_repo.update(user)

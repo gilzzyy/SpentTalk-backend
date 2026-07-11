@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import Integer, ForeignKey, Numeric, String, Date, DateTime
+from sqlalchemy import BigInteger, ForeignKey, Numeric, String, Date, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -11,17 +11,23 @@ class Transaction(Base):
     """
     __tablename__ = "transactions"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    item_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    category_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False)
+    chat_message_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True, default=None)
+    item_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False) # Discriminator: 'pemasukan' or 'pengeluaran'
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-    category: Mapped[str] = mapped_column(String(50), nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False) # Discriminator: 'income' or 'expense'
     transaction_date: Mapped[date] = mapped_column(Date, default=date.today)
+    notes: Mapped[str] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     user = relationship("User", back_populates="transactions")
+    category = relationship("Category", back_populates="transactions")
+    chat_message = relationship("ChatMessage", foreign_keys=[chat_message_id])
+
 
     __mapper_args__ = {
         "polymorphic_on": "type",
@@ -46,7 +52,7 @@ class IncomeTransaction(Transaction):
     IncomeTransaction represents cash inflow (Inheritance).
     """
     __mapper_args__ = {
-        "polymorphic_identity": "income",
+        "polymorphic_identity": "pemasukan",
     }
 
     def get_signed_amount(self) -> Decimal:
@@ -63,7 +69,7 @@ class ExpenseTransaction(Transaction):
     ExpenseTransaction represents cash outflow (Inheritance).
     """
     __mapper_args__ = {
-        "polymorphic_identity": "expense",
+        "polymorphic_identity": "pengeluaran",
     }
 
     def get_signed_amount(self) -> Decimal:

@@ -14,6 +14,8 @@ class Settings:
         self._algorithm = os.getenv("ALGORITHM", "HS256")
         self._access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
         self._gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+        self._groq_api_key = os.getenv("GROQ_API_KEY", "")
+        self._ai_provider = os.getenv("AI_PROVIDER", "gemini").lower()  # "gemini" or "groq"
 
     @property
     def database_url(self) -> str:
@@ -34,5 +36,13 @@ class Settings:
     @property
     def gemini_api_key(self) -> str:
         return self._gemini_api_key
+
+    @property
+    def groq_api_key(self) -> str:
+        return self._groq_api_key
+
+    @property
+    def ai_provider(self) -> str:
+        return self._ai_provider
 
 settings = Settings()

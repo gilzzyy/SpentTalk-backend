@@ -1,21 +1,22 @@
 from decimal import Decimal
 from typing import List, Dict, Any
 from app.models.transaction import Transaction
-from app.models.profile import FinancialProfile
+from app.models.budget import Budget
+from app.models.category import Category
 
 class FinanceManager:
     """
-    FinanceManager encapsulates core business logic for calculations, budget status tracking, and insights compilation.
+    FinanceManager encapsulates core calculations, balance updates, and budget tracking.
     """
     def __init__(self):
         pass
 
     def calculate_current_balance(self, initial_balance: Decimal, transactions: List[Transaction]) -> Decimal:
         """
-        Saldo terkini = saldo awal + total pemasukan - total pengeluaran.
-        Utilizes polymorphism: get_signed_amount() handles positive/negative signs dynamically based on sub-class.
+        Calculates the net balance: initial_balance + total income - total expenses.
+        Leverages PBO Polymorphism by calling tx.get_signed_amount().
         """
-        total_delta = Decimal("0.0")
+        total_delta = Decimal("0.00")
         for tx in transactions:
             total_delta += tx.get_signed_amount()
         return initial_balance + total_delta
@@ -24,58 +25,44 @@ class FinanceManager:
         """
         Calculates total income and total expense.
         """
-        summary = {"income": Decimal("0.0"), "expense": Decimal("0.0")}
+        summary = {"income": Decimal("0.00"), "expense": Decimal("0.00")}
         for tx in transactions:
-            amt = tx.amount
-            if tx.type == "income":
-                summary["income"] += amt
-            elif tx.type == "expense":
-                summary["expense"] += amt
+            if tx.type == "pemasukan":
+                summary["income"] += tx.amount
+            elif tx.type == "pengeluaran":
+                summary["expense"] += tx.amount
         return summary
 
-    def track_budget_progress(self, profile: FinancialProfile, transactions: List[Transaction]) -> Dict[str, Dict[str, Decimal]]:
+    def track_budget_progress(self, budgets: List[Budget], categories: List[Category], transactions: List[Transaction]) -> List[Dict[str, Any]]:
         """
-        Tracks spending per category compared to budget limits set in profile.
-        Categories: makan, transport, jajan, lainnya
-        Returns dict containing spent, budget limit, and percentage.
+        Tracks spent totals per category against budget limits.
         """
-        # Initialize spent tracking
-        spent = {
-            "makan": Decimal("0.0"),
-            "transport": Decimal("0.0"),
-            "jajan": Decimal("0.0"),
-            "lainnya": Decimal("0.0")
-        }
-        
-        # Aggregate expenses
+        # Sum expenses by category_id
+        spent = {}
         for tx in transactions:
-            if tx.type == "expense":
-                cat = tx.category.lower()
-                if cat in spent:
-                    spent[cat] += tx.amount
-                else:
-                    spent["lainnya"] += tx.amount
+            if tx.type == "pengeluaran":
+                spent[tx.category_id] = spent.get(tx.category_id, Decimal("0.00")) + tx.amount
 
-        # Map budget limits from profile
-        limits = {
-            "makan": profile.budget_makan if profile else Decimal("0.0"),
-            "transport": profile.budget_transport if profile else Decimal("0.0"),
-            "jajan": profile.budget_jajan if profile else Decimal("0.0"),
-            "lainnya": profile.budget_lainnya if profile else Decimal("0.0")
-        }
+        # Map budget limits by category_id
+        limits = {b.category_id: b.amount for b in budgets}
 
-        # Calculate progress
-        progress = {}
-        for cat in spent:
-            limit = limits[cat]
-            used = spent[cat]
-            percentage = Decimal("0.0")
+        # Build progress structures
+        progress_list = []
+        for cat in categories:
+            # We skip category checking for active flag here or handle it in callers
+            limit = limits.get(cat.id, Decimal("0.00"))
+            used = spent.get(cat.id, Decimal("0.00"))
+            percentage = Decimal("0.00")
             if limit > 0:
                 percentage = (used / limit) * 100
-            progress[cat] = {
+                
+            progress_list.append({
+                "category_id": cat.id,
+                "name": cat.name,
+                "icon": cat.icon,
                 "spent": used,
                 "limit": limit,
                 "percentage": round(percentage, 2)
-            }
-
-        return progress
+            })
+            
+        return progress_list

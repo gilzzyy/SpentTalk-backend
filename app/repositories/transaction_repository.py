@@ -2,12 +2,13 @@ from datetime import date
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models.transaction import Transaction
+from app.models.category import Category
 from app.repositories.base import BaseRepository
 
 class TransactionRepository(BaseRepository[Transaction]):
     """
-    TransactionRepository implements BaseRepository for Transaction entities.
-    Supports querying transactions with filters (date range, category, etc.).
+    TransactionRepository implements database operations for Transaction entities.
+    Supports filtering by dates and joining categories for string filter matches.
     """
     def __init__(self, db: Session):
         super().__init__(db)
@@ -29,7 +30,9 @@ class TransactionRepository(BaseRepository[Transaction]):
         user_id: int,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
-        category: Optional[str] = None,
+        category_name: Optional[str] = None,
+        period: Optional[str] = None,
+        search: Optional[str] = None,
         limit: Optional[int] = None
     ) -> List[Transaction]:
         query = self.db.query(Transaction).filter(Transaction.user_id == user_id)
@@ -38,15 +41,31 @@ class TransactionRepository(BaseRepository[Transaction]):
             query = query.filter(Transaction.transaction_date >= start_date)
         if end_date:
             query = query.filter(Transaction.transaction_date <= end_date)
-        if category:
-            query = query.filter(Transaction.category == category)
+        if category_name:
+            query = query.join(Category).filter(Category.name == category_name)
+        if period:
+            from sqlalchemy import extract
+            try:
+                year, month = map(int, period.split("-"))
+                query = query.filter(extract("year", Transaction.transaction_date) == year)
+                query = query.filter(extract("month", Transaction.transaction_date) == month)
+            except:
+                pass
+        if search:
+            query = query.filter(
+                (Transaction.item_name.ilike(f"%{search}%")) |
+                (Transaction.notes.ilike(f"%{search}%"))
+            )
+
             
         query = query.order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+
         
         if limit:
             query = query.limit(limit)
             
         return query.all()
+
 
     def update(self, obj: Transaction) -> Transaction:
         self.db.add(obj)

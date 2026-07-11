@@ -1,6 +1,6 @@
 import io
 from datetime import datetime
-from typing import List
+from typing import List, Dict, Any
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from app.models.transaction import Transaction
@@ -12,7 +12,7 @@ class ExcelExporter:
     def __init__(self):
         pass
 
-    def export_transactions(self, username: str, transactions: List[Transaction], budget_progress: dict) -> io.BytesIO:
+    def export_transactions(self, username: str, transactions: List[Transaction], budget_progress: List[Dict[str, Any]]) -> io.BytesIO:
         """
         Creates an Excel workbook containing:
         - Sheet 1: Log Transaksi Lengkap
@@ -44,8 +44,8 @@ class ExcelExporter:
                 idx,
                 tx.transaction_date.strftime("%Y-%m-%d") if tx.transaction_date else "",
                 tx.item_name,
-                tx.category,
-                "Pemasukan" if tx.type == "income" else "Pengeluaran",
+                tx.category.name if tx.category else "Lainnya",
+                "Pemasukan" if tx.type == "pemasukan" else "Pengeluaran",
                 tx.amount
             ]
             ws1.append(row_data)
@@ -66,12 +66,12 @@ class ExcelExporter:
             cell.fill = header_fill
             cell.alignment = center_align
 
-        for cat, data in budget_progress.items():
+        for item in budget_progress:
             row_data = [
-                cat.capitalize(),
-                data["spent"],
-                data["limit"],
-                data["percentage"]
+                item["name"].capitalize(),
+                item["spent"],
+                item["limit"],
+                item["percentage"]
             ]
             ws2.append(row_data)
 
