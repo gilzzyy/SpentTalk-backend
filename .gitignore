@@ -17,3 +17,8 @@ env/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Menyembunyikan file pengujian lokal dari GitHub
+test_backend.py
+test_integration.py
+test_multi_item.py
