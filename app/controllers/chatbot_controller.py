@@ -45,15 +45,63 @@ class ChatbotController:
                 reply="Halo! Saya adalah chatbot asisten keuangan SpentTalk. Tulis transaksi Anda secara alami (Contoh: 'beli nasi padang 15rb dan teh manis 3k') untuk mencatat pengeluaran."
             )
 
-        if "pengeluaran" in message:
+        if "pengeluaran" in message and "cek pemborosan" not in message:
             transactions = self.tx_repo.get_by_user(user_id)
             summary = self.finance_mgr.calculate_monthly_summary(transactions)
             return ChatResponse(
                 reply=f"Total pengeluaran Anda keseluruhan adalah: **Rp {summary['expense']:,.2f}**."
             )
 
+        # Handling instant commands: "cek pemborosan" and "tips menabung"
+        if message in ["cek pemborosan", "pemborosan", "cek boros"]:
+            user = self.user_repo.get_by_id(user_id)
+            all_tx = self.tx_repo.get_by_user(user_id)
+            current_balance = self.finance_mgr.calculate_current_balance(user.initial_balance, all_tx)
+            
+            period = date.today().strftime("%Y-%m")
+            budgets = self.budget_repo.get_user_budgets(user_id, period)
+            categories = self.cat_repo.get_user_categories(user_id)
+            progress = self.finance_mgr.track_budget_progress(budgets, categories, all_tx)
+            summary = self.finance_mgr.calculate_monthly_summary(all_tx)
+            
+            financial_summary = {
+                "saldo_terkini": float(current_balance),
+                "total_pemasukan_bulan_ini": float(summary["income"]),
+                "total_pengeluaran_bulan_ini": float(summary["expense"]),
+                "budget_progress": progress
+            }
+            
+            reply = self.parser.generate_overspending_check(financial_summary)
+            return ChatResponse(reply=reply)
+
+        if message in ["tips menabung", "tips nabung", "cara menabung", "nabung"]:
+            user = self.user_repo.get_by_id(user_id)
+            all_tx = self.tx_repo.get_by_user(user_id)
+            current_balance = self.finance_mgr.calculate_current_balance(user.initial_balance, all_tx)
+            
+            period = date.today().strftime("%Y-%m")
+            budgets = self.budget_repo.get_user_budgets(user_id, period)
+            categories = self.cat_repo.get_user_categories(user_id)
+            progress = self.finance_mgr.track_budget_progress(budgets, categories, all_tx)
+            summary = self.finance_mgr.calculate_monthly_summary(all_tx)
+            
+            financial_summary = {
+                "saldo_terkini": float(current_balance),
+                "total_pemasukan_bulan_ini": float(summary["income"]),
+                "total_pengeluaran_bulan_ini": float(summary["expense"]),
+                "budget_progress": progress
+            }
+            
+            reply = self.parser.generate_saving_tips(financial_summary)
+            return ChatResponse(reply=reply)
+
+
         # Process transaction parsing (API with fallback)
-        parsed_items = self.parser.parse_transaction(payload.message)
+        # Fetch user's actual category names to guide AI categorization
+        user_cats = self.cat_repo.get_user_categories(user_id)
+        user_cat_names = [c.name for c in user_cats]
+        
+        parsed_items = self.parser.parse_transaction(payload.message, user_cat_names)
         if not parsed_items:
             return ChatResponse(
                 reply="Maaf, saya tidak dapat mendeteksi transaksi dari kalimat tersebut. Coba ketik dengan format seperti: 'makan siang nasi padang 15rb'."
@@ -67,14 +115,10 @@ class ChatbotController:
             raw_type = item["type"]
             db_type = "pemasukan" if raw_type in ["income", "pemasukan"] else "pengeluaran"
             
-            # Match category name, fallback to "Lainnya" if not found
+            # Smart category matching with fuzzy/partial fallback
             cat_name = item["category_name"]
-            matched_cat = self.cat_repo.get_by_name(user_id, cat_name)
-            if not matched_cat:
-                matched_cat = self.cat_repo.get_by_name(user_id, "Lainnya")
-                if not matched_cat:
-                    from app.models.category import Category
-                    matched_cat = self.cat_repo.create(Category(user_id=user_id, name="Lainnya", icon="ellipsis-h"))
+            matched_cat = self._find_best_category(user_id, cat_name, user_cats)
+
 
             # Store in ChatMessage cache with status 'pending'
             chat_msg = ChatMessage(
@@ -238,3 +282,32 @@ class ChatbotController:
         warning_msg = "\n" + "\n".join(warnings) if warnings else ""
 
         return f"Berhasil menyimpan transaksi! 🎉{warning_msg}"
+
+    def _find_best_category(self, user_id: int, ai_category_name: str, user_cats):
+        """
+        Finds the best matching user category for the AI-returned category name.
+        Uses a 3-step matching strategy:
+        1. Exact/case-insensitive match (e.g., "Makan" == "makan")
+        2. Substring/partial match (e.g., "Makanan" contains "Makan")
+        3. Fallback to "Lainnya"
+        """
+        ai_name_lower = ai_category_name.strip().lower()
+
+        # Step 1: Exact case-insensitive match
+        for cat in user_cats:
+            if cat.name.lower() == ai_name_lower:
+                return cat
+
+        # Step 2: Substring/partial match (either direction)
+        for cat in user_cats:
+            cat_lower = cat.name.lower()
+            if cat_lower in ai_name_lower or ai_name_lower in cat_lower:
+                return cat
+
+        # Step 3: Fallback to "Lainnya"
+        fallback = self.cat_repo.get_by_name(user_id, "Lainnya")
+        if not fallback:
+            from app.models.category import Category
+            fallback = self.cat_repo.create(Category(user_id=user_id, name="Lainnya", icon="ellipsis-h"))
+        return fallback
+

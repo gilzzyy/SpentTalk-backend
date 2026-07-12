@@ -38,7 +38,6 @@ def get_profile(current_user_id: int = Depends(get_current_user_id), db: Session
 def update_profile(
     name: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
-    university: Optional[str] = Form(None),
     old_password: Optional[str] = Form(None),
     new_password: Optional[str] = Form(None),
     profile_photo: Optional[UploadFile] = File(None),
@@ -51,11 +50,11 @@ def update_profile(
             user_id=current_user_id,
             name=name,
             email=email,
-            university=university,
             old_password=old_password,
             new_password=new_password,
             profile_file=profile_photo
         )
+
 
     except AuthError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

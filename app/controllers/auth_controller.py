@@ -63,7 +63,6 @@ class AuthController:
         user_id: int,
         name: str = None,
         email: str = None,
-        university: str = None,
         old_password: str = None,
         new_password: str = None,
         profile_file: UploadFile = None
@@ -80,8 +79,7 @@ class AuthController:
                 if existing:
                     raise AuthError("Email baru sudah digunakan.")
                 user.email = email
-        if university is not None:
-            user.university = university
+
 
 
         if new_password:

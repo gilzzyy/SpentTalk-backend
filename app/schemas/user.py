@@ -18,7 +18,6 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=100)
     email: Optional[EmailStr] = Field(None)
-    university: Optional[str] = Field(None, max_length=255)
     old_password: Optional[str] = Field(None, min_length=6)
     new_password: Optional[str] = Field(None, min_length=6)
 
@@ -36,9 +35,9 @@ class UserOut(UserBase):
     current_balance: Decimal
     onboarding_completed: bool
     is_active: bool
-    university: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
 
