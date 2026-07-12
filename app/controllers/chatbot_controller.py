@@ -102,7 +102,16 @@ class ChatbotController:
         user_cats = self.cat_repo.get_user_categories(user_id)
         user_cat_names = [c.name for c in user_cats]
         
-        parsed_items = self.parser.parse_transaction(payload.message, user_cat_names)
+        parse_res = self.parser.parse_transaction(payload.message, user_cat_names)
+        
+        # If this is a general chat/question, not a transaction:
+        if not parse_res.get("is_transaction", False):
+            return ChatResponse(
+                reply=parse_res.get("reply", "Halo! Ada yang bisa saya bantu?"),
+                needs_confirmation=False
+            )
+            
+        parsed_items = parse_res.get("items", [])
         if not parsed_items:
             return ChatResponse(
                 reply="Maaf, saya tidak dapat mendeteksi transaksi dari kalimat tersebut. Coba ketik dengan format seperti: 'makan siang nasi padang 15rb'."
@@ -113,6 +122,7 @@ class ChatbotController:
         primary_chat_id = None
 
         for i, item in enumerate(parsed_items):
+
             raw_type = item["type"]
             db_type = "pemasukan" if raw_type in ["income", "pemasukan"] else "pengeluaran"
             
@@ -137,7 +147,8 @@ class ChatbotController:
                 primary_chat_id = saved_chat.id
 
             sign = "+" if db_type == "pemasukan" else "-"
-            reply_lines.append(f"- **{saved_chat.parsed_item_name}** ({matched_cat.name}): {sign}Rp {saved_chat.parsed_amount:,.0f}")
+            reply_lines.append(f"- <b>{saved_chat.parsed_item_name}</b> ({matched_cat.name}): {sign}Rp {saved_chat.parsed_amount:,.0f}")
+
             
             parsed_items_schemas.append(ParsedItem(
                 item_name=saved_chat.parsed_item_name,
@@ -263,7 +274,7 @@ class ChatbotController:
                 percent = p["percentage"]
                 if percent >= 100:
                     warn_text = f"Pengeluaran kategori {p['name']} sudah MELEBIHI budget bulanan ({percent}% terpakai)!"
-                    warnings.append(f"⚠️ **Peringatan**: {warn_text}")
+                    warnings.append(f"⚠️ <b>Peringatan</b>: {warn_text}")
                     notif_repo.create(Notification(
                         user_id=user_id,
                         title="Batas Anggaran Terlewati",
@@ -272,7 +283,7 @@ class ChatbotController:
                     ))
                 elif percent >= 80:
                     warn_text = f"Pengeluaran kategori {p['name']} sudah mencapai {percent}% dari budget bulanan!"
-                    warnings.append(f"⚠️ **Peringatan**: {warn_text}")
+                    warnings.append(f"⚠️ <b>Peringatan</b>: {warn_text}")
                     notif_repo.create(Notification(
                         user_id=user_id,
                         title="Anggaran Hampir Habis",
@@ -281,6 +292,7 @@ class ChatbotController:
                     ))
                     
         warning_msg = "\n" + "\n".join(warnings) if warnings else ""
+
 
         return f"Berhasil menyimpan transaksi! 🎉{warning_msg}"
 

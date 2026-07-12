@@ -6,48 +6,64 @@ from app.core.config import settings
 
 
 def _build_prompt(text: str, user_categories: Optional[List[str]] = None) -> str:
-    """Builds the shared financial parser prompt for both AI providers.
-    Includes the user's actual category names for accurate matching."""
-
+    """Builds the shared hybrid chat & financial parser prompt for both AI providers."""
     # Build category instruction
     if user_categories:
         cat_list = ", ".join(user_categories)
-        category_instruction = f"""4. KATEGORISASI AKURAT: Pengguna memiliki kategori berikut di akun mereka: [{cat_list}].
-   Kamu WAJIB memilih SALAH SATU dari daftar kategori di atas yang paling relevan untuk setiap barang.
-   Panduan pemetaan:
-   - Makanan/minuman yang mengenyangkan (nasi, bakso, mie ayam, soto, dll) -> pilih kategori yang berhubungan dengan makan (misal: Makan).
-   - Minuman/cemilan ringan (es teh, kopi, jus, snack, dll) -> pilih kategori yang berhubungan dengan jajan/cemilan (misal: Jajan).
-   - Transportasi (bensin, gojek, grab, parkir, tol, bus, kereta) -> pilih kategori transportasi (misal: Transport).
-   - Jika tidak ada kategori yang cocok sama sekali, gunakan "Lainnya".
-   PENTING: Jangan pernah membuat nama kategori baru di luar daftar yang diberikan."""
+        category_instruction = f"""- KATEGORISASI AKURAT: Pengguna memiliki kategori berikut di akun mereka: [{cat_list}].
+      Kamu WAJIB memilih SALAH SATU dari daftar kategori di atas yang paling relevan untuk setiap barang.
+      Panduan pemetaan:
+      * Makanan/minuman yang mengenyangkan (nasi, bakso, mie ayam, soto, dll) -> pilih kategori Makan.
+      * Minuman/cemilan ringan (es teh, kopi, jus, snack, dll) -> pilih kategori Jajan.
+      * Transportasi (bensin, gojek, grab, parkir, tol, bus, kereta) -> pilih kategori Transport.
+      * Jika tidak ada kategori yang cocok sama sekali, gunakan "Lainnya"."""
     else:
-        category_instruction = """4. KATEGORISASI AKURAT: Tentukan nama kategori yang paling relevan untuk setiap barang (Contoh: Nasi Padang -> Makan, Es Teh -> Jajan, Bensin -> Transport). Jika tidak cocok, gunakan "Lainnya"."""
+        category_instruction = """- KATEGORISASI AKURAT: Tentukan nama kategori yang paling relevan untuk setiap barang (Contoh: Nasi Padang -> Makan, Es Teh -> Jajan, Bensin -> Transport). Jika tidak cocok, gunakan "Lainnya"."""
 
-    return f"""Kamu adalah mesin pengekstraksi transaksi keuangan (Financial Transaction Parser) berskala internasional untuk platform SpentTalk. Tugasmu adalah menganalisis pesan teks bebas dari pengguna dan mengubahnya menjadi format data JSON terstruktur yang valid.
+    return f"""Kamu adalah asisten keuangan pribadi cerdas bernama SpentTalk. Tugasmu adalah menganalisis pesan dari pengguna secara cerdas.
 
 Pesan pengguna: "{text}"
 
-Patuhi instruksi ketat berikut untuk memperbaiki hasil ekstraksi:
-1. DETEKSI MULTI-ITEM secara Menyeluruh: Analisis seluruh kalimat tanpa terkecuali. Jika pengguna menyebutkan lebih dari satu transaksi atau barang (misalnya dipisahkan kata 'dan', 'lalu', atau koma), kamu WAJIB mengekstrak SEMUA item tersebut ke dalam array "items". Jangan berhenti di item pertama.
-2. MEMBERSIHKAN NAMA BARANG: Jangan pernah menyertakan kata kerja tindakan seperti "beli", "habis", "makan", "minum", "membayar", atau "jual" ke dalam properti "item_name". Ambil nama murni objek/barangnya saja secara rapi dengan format Capitalize (Contoh: "nasi padang" menjadi "Nasi Padang", "es teh" menjadi "Es Teh").
-3. KONVERSI MATA UANG & SLANG: Kamu harus mengenali bahasa gaul keuangan Indonesia. Konversikan kata seperti "ribu", "rb", "k", "juta", "jt" menjadi angka desimal murni berbasis string (Contoh: "10rb" atau "10ribu" -> "10000.00"; "3ribu" -> "3000.00").
-{category_instruction}
-5. DETERMINASI TIPE (SANGAT PENTING): Tentukan properti "type" secara tepat berdasarkan konteks kalimat:
-   - "pengeluaran" (uang KELUAR): Jika pengguna MENGELUARKAN uang. Kata kunci: beli, habis, bayar, beli, belanja, sewa, cicilan, tagihan, ongkir, parkir, makan, minum, jajan.
-   - "pemasukan" (uang MASUK): Jika pengguna MENERIMA uang. Kata kunci: gaji, terima, dapat, dikasih, kiriman, transfer masuk, penghasilan, honorarium, bonus, THR, uang jajan dari orang tua, hasil jualan, freelance, cashback.
-   Jika tidak ada konteks yang jelas, DEFAULT ke "pengeluaran".
+Patuhi instruksi ketat berikut:
+1. KLASIFIKASI PESAN: Tentukan apakah pengguna sedang MENCATAT TRANSAKSI baru (pengeluaran atau pemasukan uang secara spesifik dengan nominal angka) ATAU sekadar ingin MENGOBROL, menyapa, bertanya tips keuangan, atau berkonsultasi secara umum.
+   - Set properti "is_transaction" ke true jika pengguna berniat mencatat transaksi.
+   - Set properti "is_transaction" ke false jika pengguna hanya mengobrol, menyapa, atau bertanya tentang hal-hal umum.
+
+2. JIKA BUKAN TRANSAKSI (is_transaction = false):
+   - Jawablah pesan pengguna dengan ramah, cerdas, solutif, dan informatif layaknya asisten keuangan pribadi yang profesional (maksimal 3-4 kalimat dalam Bahasa Indonesia).
+   - Simpan jawaban tersebut pada properti "reply".
+   - Biarkan array "items" bernilai kosong [].
+
+3. JIKA MERUPAKAN TRANSAKSI (is_transaction = true):
+   - Deteksi Multi-Item: Jika pengguna menyebutkan lebih dari satu barang (misal: "bakso 10k dan es teh 3k"), kamu WAJIB mengekstrak semua barang tersebut ke dalam array "items".
+   - Bersihkan Nama Barang: Jangan pernah menyertakan kata kerja tindakan (beli, habis, makan, minum, dll) ke dalam "item_name". Format dengan Title Case.
+   - Konversi nominal gaul (ribu, rb, k, juta, jt) menjadi angka desimal string (misal: "10rb" -> "10000.00").
+   {category_instruction}
+   - Determinasi Tipe: Tentukan "type" ("pengeluaran" atau "pemasukan") secara tepat berdasarkan kata kunci/konteks kalimat.
+   - Buat rangkuman konfirmasi singkat di properti "reply" menggunakan format persis seperti contoh di bawah.
 
 Kamu WAJIB mengembalikan output HANYA dalam format JSON murni yang mengikuti struktur objek di bawah ini, tanpa teks pengantar atau penutup apa pun:
 
 {{
+  "is_transaction": true,
+  "reply": "Saya mendeteksi transaksi berikut:\\n- <b>Bakso</b> (Makan): -Rp 10,000\\n- <b>Es Teh</b> (Jajan): -Rp 3,000\\n\\nApakah data di atas sudah benar? (Ya/Tidak)",
   "items": [
+
     {{
       "item_name": "Nama Barang Murni",
       "amount": "10000.00",
       "category_name": "Nama Kategori",
-      "type": "pengeluaran/pemasukan"
+      "type": "pengeluaran"
     }}
   ]
+}}
+
+ATAU jika bukan transaksi:
+
+{{
+  "is_transaction": false,
+  "reply": "Respon obrolan asisten keuangan Anda di sini...",
+  "items": []
 }}"""
 
 
@@ -57,6 +73,7 @@ def _build_insight_prompt(financial_summary: Dict[str, Any]) -> str:
 {json.dumps(financial_summary, default=str)}
 
 Tulis dalam Bahasa Indonesia secara ramah, santai, dan informatif (maksimal 3 kalimat). Berikan peringatan jika pengeluaran kategori mendekati atau melebihi budget."""
+
 
 
 def _clean_json_response(text: str) -> str:
@@ -83,6 +100,31 @@ def _normalize_parsed_items(data) -> List[Dict[str, Any]]:
             item["amount"] = float(item["amount"])
 
     return data
+
+
+def _normalize_parser_response(data: Any) -> Dict[str, Any]:
+    """Ensures parser output follows the hybrid {"is_transaction", "reply", "items"} structure."""
+    if not isinstance(data, dict):
+        return {
+            "is_transaction": True,
+            "reply": "Saya mendeteksi transaksi berikut.",
+            "items": _normalize_parsed_items(data)
+        }
+
+    is_tx = data.get("is_transaction", True)
+    reply = data.get("reply", "")
+    items_raw = data.get("items", [])
+
+    normalized_items = _normalize_parsed_items(items_raw)
+
+    if is_tx and not reply:
+        reply = "Saya mendeteksi transaksi berikut."
+
+    return {
+        "is_transaction": is_tx,
+        "reply": reply,
+        "items": normalized_items
+    }
 
 
 class GeminiProvider:
@@ -113,7 +155,7 @@ class GroqProvider:
     def generate(self, prompt: str) -> str:
         chat_completion = self.client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "Kamu adalah asisten pengekstraksi transaksi keuangan untuk platform SpentTalk. Selalu kembalikan JSON murni tanpa teks tambahan."},
+                {"role": "system", "content": "Kamu adalah asisten keuangan pribadi cerdas bernama SpentTalk. Selalu kembalikan JSON murni tanpa teks tambahan."},
                 {"role": "user", "content": prompt}
             ],
             model=self.model_name,
@@ -130,7 +172,7 @@ class GroqProvider:
 class NLPParser:
     """
     NLPParser handles interaction with AI providers (Gemini or Groq) to parse
-    natural language text into financial data structures.
+    natural language text into financial data structures or chat answers.
     Falls back to local rule-based parsing if all API calls fail.
     """
     def __init__(self):
@@ -153,11 +195,11 @@ class NLPParser:
         if not self.provider:
             print(f"[NLPParser] Tidak ada AI provider aktif. Menggunakan local fallback parser.")
 
-    def parse_transaction(self, text: str, user_categories: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def parse_transaction(self, text: str, user_categories: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Sends natural language text to the active AI provider to extract transaction items.
+        Sends natural language text to the active AI provider to extract transaction items or chat.
         Accepts optional user_categories list to guide AI categorization.
-        Returns a list of dicts with keys: item_name, amount, category_name, type.
+        Returns a dict: {"is_transaction": bool, "reply": str, "items": list}
         """
         if self.provider:
             prompt = _build_prompt(text, user_categories)
@@ -165,7 +207,7 @@ class NLPParser:
                 response_text = self.provider.generate(prompt)
                 cleaned = _clean_json_response(response_text)
                 data = json.loads(cleaned)
-                return _normalize_parsed_items(data)
+                return _normalize_parser_response(data)
             except Exception as e:
                 print(f"[NLPParser] {self.provider.name} API error, falling back to regex: {e}")
 
@@ -189,8 +231,21 @@ class NLPParser:
 
     # ---- Local Fallback Methods ----
 
-    def _local_parse(self, text: str, user_categories: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Multi-item offline regex parser fallback with smart categorization."""
+    def _local_parse(self, text: str, user_categories: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Multi-item offline regex parser fallback with smart categorization and basic chat detection."""
+        text_lower = text.strip().lower()
+
+        # Simple offline chat query checking
+        chat_keywords = ["halo", "hi", "apa kabar", "tanya", "tips", "bagaimana", "saran", "siapa", "bantuan"]
+        is_chat_only = any(x in text_lower for x in chat_keywords) and not any(char.isdigit() for char in text_lower)
+
+        if is_chat_only:
+            return {
+                "is_transaction": False,
+                "reply": "Halo! Saya adalah asisten keuangan pribadi Anda. Untuk mencatat pengeluaran atau pemasukan, ketik pesan beserta jumlah nominalnya (contoh: 'makan siang 15rb').",
+                "items": []
+            }
+
         parts = re.split(r'\b(?:dan|lalu|serta|\+)\b|,', text)
         extracted_items = []
 
@@ -201,11 +256,6 @@ class NLPParser:
             "thr", "uang jajan", "hasil jualan", "freelance", "cashback",
             "dibayar", "menerima"
         ]
-        # Expense keyword detection
-        expense_keywords = [
-            "beli", "habis", "bayar", "belanja", "sewa", "cicilan",
-            "tagihan", "ongkir", "parkir", "makan", "minum", "jajan"
-        ]
 
         for part in parts:
             part = part.strip()
@@ -214,12 +264,12 @@ class NLPParser:
 
             part_lower = part.lower()
 
-            # Determine type - check income first, then expense, default to expense
+            # Determine type
             tx_type = "pengeluaran"
             if any(x in part_lower for x in income_keywords):
                 tx_type = "pemasukan"
 
-            # Find and parse numbers (slang e.g., 10ribu, 10rb, 10k, 10000)
+            # Find and parse numbers
             amount = 10000.0
             num_match = re.search(r'(\d+(?:\.\d+)?)\s*(ribu|rb|k|juta|jt)?', part_lower)
             if num_match:
@@ -236,7 +286,7 @@ class NLPParser:
                     else:
                         amount = val
 
-            # Clean item name: remove numbers and action/stop words
+            # Clean item name
             clean_part = part
             if num_match:
                 clean_part = clean_part.replace(num_match.group(0), "")
@@ -254,11 +304,10 @@ class NLPParser:
             if not item_name:
                 item_name = "Transaksi"
 
-            # Smart categorization with expanded keywords
+            # Smart categorization
             cat = "Lainnya"
             clean_lower = clean_part.lower()
 
-            # Category mapping rules (from most specific to least)
             category_rules = {
                 "Makan": ["nasi", "bakso", "mie", "ayam", "sate", "soto", "padang", "warteg",
                           "rendang", "gudeg", "rawon", "pecel", "lauk", "sayur", "rice",
@@ -287,15 +336,20 @@ class NLPParser:
                 "type": tx_type
             })
 
-        if not extracted_items:
-            extracted_items.append({
-                "item_name": "Transaksi",
-                "amount": 10000.0,
-                "category_name": "Lainnya",
-                "type": "pengeluaran"
-            })
+        # Build transaction reply summary
+        reply_lines = ["Saya mendeteksi transaksi berikut:"]
+        for item in extracted_items:
+            sign = "+" if item["type"] == "pemasukan" else "-"
+            reply_lines.append(f"- <b>{item['item_name']}</b> ({item['category_name']}): {sign}Rp {item['amount']:,.0f}")
+        reply_lines.append("\nApakah data di atas sudah benar? (Ya/Tidak)")
 
-        return extracted_items
+        reply_str = "\n".join(reply_lines)
+
+        return {
+            "is_transaction": True,
+            "reply": reply_str,
+            "items": extracted_items
+        }
 
     def _local_insight(self, financial_summary: Dict[str, Any]) -> str:
         """Local fallback insight generator."""
@@ -372,4 +426,3 @@ Berikan saran praktis dan langkah menabung (maksimal 3-4 kalimat) dalam Bahasa I
             "3. **Gunakan Rekening Terpisah**: Simpan tabunganmu di rekening tanpa kartu ATM/M-Banking aktif untuk mencegah godaan belanja impulsif."
         ]
         return "\n".join(tips)
-
