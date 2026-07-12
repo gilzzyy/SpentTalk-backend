@@ -108,7 +108,35 @@ def get_dashboard_summary(
             for p in budget_progress
         ]
     }
-    ai_insight = nlp_parser.generate_financial_insight(summary_data)
+    # Generate or reuse cached AI financial insights to prevent Groq API 429 Rate Limits
+    from app.models.ai_insight import AIInsight
+    from datetime import datetime, timedelta
+
+    
+    # Check if a recent general insight exists (within last 5 minutes)
+    cache_threshold = datetime.utcnow() - timedelta(minutes=5)
+    cached_insight = db.query(AIInsight).filter(
+        AIInsight.user_id == current_user_id,
+        AIInsight.insight_type == "general",
+        AIInsight.period == period,
+        AIInsight.created_at >= cache_threshold
+    ).order_by(AIInsight.created_at.desc()).first()
+    
+    if cached_insight:
+        ai_insight = cached_insight.message
+    else:
+        # Call AI parser to generate new insight
+        ai_insight = nlp_parser.generate_financial_insight(summary_data)
+        
+        # Save to cache
+        new_insight = AIInsight(
+            user_id=current_user_id,
+            period=period,
+            insight_type="general",
+            message=ai_insight
+        )
+        db.add(new_insight)
+        db.commit()
     
     # Update current_balance on User model
     if user.current_balance != saldo_terkini:
@@ -116,6 +144,7 @@ def get_dashboard_summary(
         user_repo.update(user)
     
     return DashboardSummary(
+
         saldo_terkini=saldo_terkini,
         total_pemasukan_bulan_ini=monthly_sums["income"],
         total_pengeluaran_bulan_ini=monthly_sums["expense"],
