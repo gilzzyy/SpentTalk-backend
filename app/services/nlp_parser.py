@@ -37,7 +37,7 @@ Patuhi instruksi ketat berikut:
 3. JIKA MERUPAKAN TRANSAKSI (is_transaction = true):
    - Deteksi Multi-Item: Jika pengguna menyebutkan lebih dari satu barang (misal: "bakso 10k dan es teh 3k"), kamu WAJIB mengekstrak semua barang tersebut ke dalam array "items".
    - Bersihkan Nama Barang: Jangan pernah menyertakan kata kerja tindakan (beli, habis, makan, minum, dll) ke dalam "item_name". Format dengan Title Case.
-   - Konversi nominal gaul (ribu, rb, k, juta, jt) menjadi angka desimal string (misal: "10rb" -> "10000.00").
+   - Konversi nominal gaul (ribu, rb, k, juta, jt) menjadi angka Rupiah desimal murni string (Contoh: "7k" -> "7000.00"; "10rb" -> "10000.00"; "3ribu" -> "3000.00"; "1jt" -> "1000000.00").
    {category_instruction}
    - Determinasi Tipe: Tentukan "type" ("pengeluaran" atau "pemasukan") secara tepat berdasarkan kata kunci/konteks kalimat.
    - Buat rangkuman konfirmasi singkat di properti "reply" menggunakan format persis seperti contoh di bawah.
@@ -46,8 +46,9 @@ Kamu WAJIB mengembalikan output HANYA dalam format JSON murni yang mengikuti str
 
 {{
   "is_transaction": true,
-  "reply": "Saya mendeteksi transaksi berikut:\\n- <b>Bakso</b> (Makan): -Rp 10,000\\n- <b>Es Teh</b> (Jajan): -Rp 3,000\\n\\nApakah data di atas sudah benar? (Ya/Tidak)",
+  "reply": "Saya mendeteksi transaksi berikut:\\n- **Bakso** (Makan): -Rp 10,000\\n- **Es Teh** (Jajan): -Rp 3,000\\n\\nApakah data di atas sudah benar? (Ya/Tidak)",
   "items": [
+
 
     {{
       "item_name": "Nama Barang Murni",
@@ -340,8 +341,9 @@ class NLPParser:
         reply_lines = ["Saya mendeteksi transaksi berikut:"]
         for item in extracted_items:
             sign = "+" if item["type"] == "pemasukan" else "-"
-            reply_lines.append(f"- <b>{item['item_name']}</b> ({item['category_name']}): {sign}Rp {item['amount']:,.0f}")
+            reply_lines.append(f"- **{item['item_name']}** ({item['category_name']}): {sign}Rp {item['amount']:,.0f}")
         reply_lines.append("\nApakah data di atas sudah benar? (Ya/Tidak)")
+
 
         reply_str = "\n".join(reply_lines)
 
