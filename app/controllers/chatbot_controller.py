@@ -39,21 +39,8 @@ class ChatbotController:
         if not message:
             return ChatResponse(reply="Silakan masukkan pesan transaksi keuangan Anda.")
 
-        # Check for simple general queries
-        if message in ["halo", "hi", "p", "siapa kamu", "help"]:
-            return ChatResponse(
-                reply="Halo! Saya adalah chatbot asisten keuangan SpentTalk. Tulis transaksi Anda secara alami (Contoh: 'beli nasi padang 15rb dan teh manis 3k') untuk mencatat pengeluaran."
-            )
-
-        if "pengeluaran" in message and "cek pemborosan" not in message:
-            transactions = self.tx_repo.get_by_user(user_id)
-            summary = self.finance_mgr.calculate_monthly_summary(transactions)
-            return ChatResponse(
-                reply=f"Total pengeluaran Anda keseluruhan adalah: **Rp {summary['expense']:,.2f}**."
-            )
-
-        # Handling instant commands: "cek pemborosan" and "tips menabung"
-        if message in ["cek pemborosan", "pemborosan", "cek boros"]:
+        # 1. Handling instant commands: "cek pemborosan" and "tips menabung" (Highest priority, matching substrings)
+        if "pemborosan" in message or "boros" in message:
             user = self.user_repo.get_by_id(user_id)
             all_tx = self.tx_repo.get_by_user(user_id)
             current_balance = self.finance_mgr.calculate_current_balance(user.initial_balance, all_tx)
@@ -74,7 +61,7 @@ class ChatbotController:
             reply = self.parser.generate_overspending_check(financial_summary)
             return ChatResponse(reply=reply)
 
-        if message in ["tips menabung", "tips nabung", "cara menabung", "nabung"]:
+        if "menabung" in message or "nabung" in message:
             user = self.user_repo.get_by_id(user_id)
             all_tx = self.tx_repo.get_by_user(user_id)
             current_balance = self.finance_mgr.calculate_current_balance(user.initial_balance, all_tx)
@@ -94,6 +81,20 @@ class ChatbotController:
             
             reply = self.parser.generate_saving_tips(financial_summary)
             return ChatResponse(reply=reply)
+
+        # 2. Check for simple general queries
+        if message in ["halo", "hi", "p", "siapa kamu", "help"]:
+            return ChatResponse(
+                reply="Halo! Saya adalah chatbot asisten keuangan SpentTalk. Tulis transaksi Anda secara alami (Contoh: 'beli nasi padang 15rb dan teh manis 3k') untuk mencatat pengeluaran."
+            )
+
+        if "pengeluaran" in message:
+            transactions = self.tx_repo.get_by_user(user_id)
+            summary = self.finance_mgr.calculate_monthly_summary(transactions)
+            return ChatResponse(
+                reply=f"Total pengeluaran Anda keseluruhan adalah: **Rp {summary['expense']:,.2f}**."
+            )
+
 
 
         # Process transaction parsing (API with fallback)
